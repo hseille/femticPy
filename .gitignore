@@ -1,0 +1,10 @@
+__pycache__/
+
+*.png
+*.DS_Store
+*.pyc
+
+meshGen_petrichor.sh
+create_mesh_petrichor.sh
+run_inversion_petrichor.sh
+run_inversion_synthetic_petrichor.sh

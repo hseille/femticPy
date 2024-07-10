@@ -1,0 +1,4 @@
+MT,
+     StaID,        Freq[Hz],     Re(Zxx)_Cal,     Im(Zxx)_Cal,     Re(Zxy)_Cal,     Im(Zxy)_Cal,     Re(Zyx)_Cal,     Im(Zyx)_Cal,     Re(Zyy)_Cal,     Im(Zyy)_Cal,     Re(Zxx)_Res,     Im(Zxx)_Res,     Re(Zxy)_Res,     Im(Zxy)_Res,     Re(Zyx)_Res,     Im(Zyx)_Res,     Re(Zyy)_Res,     Im(Zyy)_Res,     Re(Zxx)_Obs,     Im(Zxx)_Obs,     Re(Zxy)_Obs,     Im(Zxy)_Obs,     Re(Zyx)_Obs,     Im(Zyx)_Obs,     Re(Zyy)_Obs,     Im(Zyy)_Obs,      Re(Zxx)_SD,      Im(Zxx)_SD,      Re(Zxy)_SD,      Im(Zxy)_SD,      Re(Zyx)_SD,      Im(Zyx)_SD,      Re(Zyy)_SD,      Im(Zyy)_SD,
+VTF,
+     StaID,        Freq[Hz],     Re(Tzx)_Cal,     Im(Tzx)_Cal,     Re(Tzy)_Cal,     Im(Tzy)_Cal,     Re(Tzx)_Res,     Im(Tzx)_Res,     Re(Tzy)_Res,     Im(Tzy)_Res,     Re(Tzx)_Obs,     Im(Tzx)_Obs,     Re(Tzy)_Obs,     Im(Tzy)_Obs,      Re(Tzx)_SD,      Im(Tzx)_SD,      Re(Tzy)_SD,      Im(Tzy)_SD,
