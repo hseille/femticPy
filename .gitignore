@@ -1,7 +1,7 @@
 __pycache__/
 
 *.png
-*.DS_Store
+.DS_Store
 *.pyc
 
 meshGen_petrichor.sh
