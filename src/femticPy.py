@@ -42,7 +42,7 @@ pd.options.mode.chained_assignment = None  # default='warn'
 import os
 from copy import deepcopy
 
-import EDItools as edi
+import MTtools as MTtools
 
 
 
@@ -117,6 +117,7 @@ class DataGen():
         self.coast_line = False
         
         self.outdir = outdir
+        self.plot_dir = "./input_data/plots"
         
     
     def read_MTdata(self, edi_path):
@@ -135,7 +136,7 @@ class DataGen():
                     edi_file_path = '%s/%s'%(edi_path, edi_file)
                     print ('    reading %s'%edi_file)
                     #read edi file
-                    edi_data, site_id, coord = edi.read(edi_file_path)
+                    edi_data, site_id, coord = MTtools.read(edi_file_path)
                     
 
                     
@@ -187,7 +188,7 @@ class DataGen():
                             else:
                                 if min(np.abs(np.log10(freq_list) - np.log10(edi_data['FREQ'].values[freq]))) < 0.01:
                                     idx = (np.abs(freq_list - edi_data['FREQ'].values[freq])).argmin()
-                                    edi_data['FREQ'][freq] = freq_list[idx]
+                                    edi_data.loc[freq, "FREQ"] = freq_list[idx]
                                 else:
                                     freq_list.append(edi_data['FREQ'].values[freq])
 
@@ -207,7 +208,7 @@ class DataGen():
         
         # read coordinates_file
         coords = pd.read_csv('%s/%s'%(coordinates_path,coordinates_file), 
-                             header=None, delim_whitespace=(True),
+                             header=None, sep='\s+',
                              names = ['id','east','north','z'],
                              dtype={'id': 'string',
                                     'east': 'float64',
@@ -266,14 +267,16 @@ class DataGen():
                 
                 for i, comp in enumerate(['ZXX.VAR','ZXY.VAR','ZYX.VAR','ZYY.VAR']):
                     if std[comp][freq] < error_floor[i]:
-                        data[comp][freq] =  (error_floor[i])**2
+                        #data[comp][freq] =  (error_floor[i])**2
+                        data.loc[freq, comp] = (error_floor[i])**2
             
         elif data_type == 'VTF':
             std = data[['TXVAR.EXP','TYVAR.EXP']]**0.5   
             for freq in range(len(data)):
                 for i, comp in enumerate(['TXVAR.EXP','TYVAR.EXP']):
                     if std[comp][freq] < self.error_floor_Tz:
-                        data[comp][freq] =  (self.error_floor_Tz)**2
+                        #data[comp][freq] =  (self.error_floor_Tz)**2
+                        data.loc[freq, comp] = (self.error_floor_Tz)**2
 
         return data
   
@@ -357,7 +360,7 @@ class DataGen():
     def write_observe(self, write = True, freq_bandwidth = None, subsampling = 1, plot=True):
         
         self.prep_data(freq_bandwidth = freq_bandwidth, subsampling = subsampling)
-        self.plot_inversion_periods()
+        if plot: self.plot_inversion_periods()
         
         file_loc = os.path.join(self.outdir, 'observe.dat') 
         file = open(file_loc,'w')
@@ -578,7 +581,7 @@ class DataGen():
 
     def plot_coast_line(self):
             nPolys = pd.read_csv(self.coast_line, nrows=1, names=['n'])['n'][0]
-            coast_line_pd = pd.read_csv(self.coast_line, skiprows=1, delim_whitespace= True, names = ['north','east','i','j'])
+            coast_line_pd = pd.read_csv(self.coast_line, skiprows=1, sep='\s+', names = ['north','east','i','j'])
             cb = np.where((coast_line_pd['i']==1) | (coast_line_pd['i']==-1))[0]
             
             for i in range(nPolys):
@@ -590,11 +593,11 @@ class DataGen():
 
     def plot_topo_bathy(self):
 
-            topo_pd = pd.read_csv(self.topography, delim_whitespace= True, names = ['north','east','z'])
+            topo_pd = pd.read_csv(self.topography, sep='\s+', names = ['north','east','z'])
             topo_pd = topo_pd[topo_pd['z'] > 0]
             plt.scatter(topo_pd['east'],topo_pd['north'],c=topo_pd['z'],cmap = 'Greens', s=2)  
   
-            bathy_pd = pd.read_csv(self.bathymetry, delim_whitespace= True, names = ['north','east','z'])
+            bathy_pd = pd.read_csv(self.bathymetry, sep='\s+', names = ['north','east','z'])
             bathy_pd = bathy_pd[bathy_pd['z'] > 0]
             plt.scatter(bathy_pd['east'],bathy_pd['north'],c=bathy_pd['z'] ,cmap = 'Blues', s=2)                   
         
@@ -1020,10 +1023,11 @@ class InvResults():
         return output
     
     
-    def read_result_csv(self):
-        
-        self.create_res_dir()
     
+    def read_result_csv(self):
+    
+        self.create_res_dir()
+
         for root, dirs, files in os.walk(self.dir):
             for file in (files):
                 if file.endswith('%d.csv'%self.nIter):
@@ -1060,29 +1064,56 @@ class InvResults():
         if self.invert_Z:
             resp_Z_all.columns = resp_Z_all.columns.str.lstrip()
             resp_Z_all = resp_Z_all.sort_values(['StaID', 'Freq[Hz]'],
-                          ascending = [True, False])     
+                        ascending = [True, False])     
         
             resp_Z_all = resp_Z_all.reset_index(drop=True)   
         
-            for site in range(len(self.ids_Z)):
-                idx = np.where(resp_Z_all['StaID'] == site+1) 
-                # print(idx[0], '----', self.mt_ids[site])
-                resp_Z_all['StaID'][idx[0]] = self.ids_Z[site]
+            # for site in range(len(self.ids_Z)):
+            #     idx = np.where(resp_Z_all['StaID'] == site+1) 
+            #     # print(idx[0], '----', self.mt_ids[site])
+            #     resp_Z_all['StaID'][idx[0]] = self.ids_Z[site]
+            
+            # CJOBIM GitHub Issue #2
+            #this attemps to fix the original code above which fails when station ID numbers aren''t sequential (if all stations don't have VTF or PT)
+            unique_ids = resp_Z_all['StaID'].unique()
+            if len(unique_ids) != len(self.ids_Z):
+                print("Warning: Number of unique station IDs in CSV does not match self.ids_Z.")
+                print("unique StaIDs found:", unique_ids)
+                print("expected StaIDs:", self.ids_Z)
+
+            for i, sta_id in enumerate(sorted(unique_ids)):
+                if i < len(self.ids_Z):
+                    idx = resp_Z_all['StaID'] == sta_id
+                    resp_Z_all.loc[idx, 'StaID'] = self.ids_Z[i]
         
             self.resp_Z = resp_Z_all        
-    
+
 
         if self.invert_VTF:
             resp_VTF_all.columns = resp_VTF_all.columns.str.lstrip()
             resp_VTF_all = resp_VTF_all.sort_values(['StaID', 'Freq[Hz]'],
-                          ascending = [True, False])     
+                        ascending = [True, False])     
         
             resp_VTF_all = resp_VTF_all.reset_index(drop=True)   
         
-            for site in range(len(self.ids_VTF)):
-                idx = np.where(resp_VTF_all['StaID'] == site+1001) 
-                resp_VTF_all['StaID'][idx[0]] = self.ids_VTF[site]
-                
+            # for site in range(len(self.ids_VTF)):
+            #     idx = np.where(resp_VTF_all['StaID'] == site+1001) 
+            #     resp_VTF_all['StaID'][idx[0]] = self.ids_VTF[site]
+            
+            # CJOBIM GitHub Issue #2
+            #this attemps to fix the original code above which fails when station ID numbers aren''t sequential (if all stations don't have VTF or PT)
+            unique_ids = resp_VTF_all['StaID'].unique()
+            if len(unique_ids) != len(self.ids_VTF):
+                print("Warning: Number of unique station IDs in CSV does not match self.ids_VTF.")
+                print("unique StaIDs found:", unique_ids)
+                print("expected StaIDs:", self.ids_VTF)
+
+            for i, sta_id in enumerate(sorted(unique_ids)):
+                if i < len(self.ids_VTF):
+                    idx = resp_VTF_all['StaID'] == sta_id
+                    resp_VTF_all.loc[idx, 'StaID'] = self.ids_VTF[i]
+            
+            
             resp_VTF_all['Im(Tzx)_Cal'] = -resp_VTF_all['Im(Tzx)_Cal']
             resp_VTF_all['Im(Tzy)_Cal'] = -resp_VTF_all['Im(Tzy)_Cal']
             resp_VTF_all['Im(Tzx)_Obs'] = -resp_VTF_all['Im(Tzx)_Obs']
@@ -1096,18 +1127,28 @@ class InvResults():
         if self.invert_PT:
             resp_PT_all.columns = resp_PT_all.columns.str.lstrip()
             resp_PT_all = resp_PT_all.sort_values(['StaID', 'Freq[Hz]'],
-                          ascending = [True, False])     
+                        ascending = [True, False])     
         
             resp_PT_all = resp_PT_all.reset_index(drop=True)   
         
-            for site in range(len(self.mt_ids)):
-                idx = np.where(resp_PT_all['StaID'] == site+1) 
-                resp_PT_all['StaID'][idx[0]] = self.mt_ids[site]
+            # for site in range(len(self.mt_ids)):
+            #     idx = np.where(resp_PT_all['StaID'] == site+1) 
+            #     resp_PT_all['StaID'][idx[0]] = self.mt_ids[site]
+
+            #this attemps to fix the original code above which fails when station ID numbers aren''t sequential (if all stations don't have VTF or PT)
+            unique_ids = resp_PT_all['StaID'].unique()
+            if len(unique_ids) != len(self.ids_Z):
+                print("Warning: Number of unique station IDs in CSV does not match self.ids_Z.")
+                print("unique StaIDs found:", unique_ids)
+                print("expected StaIDs:", self.ids_PT)
+
+            for i, sta_id in enumerate(sorted(unique_ids)):
+                if i < len(self.ids_PT):
+                    idx = resp_PT_all['StaID'] == sta_id
+                    resp_PT_all.loc[idx, 'StaID'] = self.ids_PT[i]
+
         
             self.resp_PT = resp_PT_all
-    
-    
-
 
 
     def plot_cnv(self, save_plot=True):
@@ -1579,86 +1620,146 @@ class InvResults():
         ax.text(0, 9, 'RMS VTF site = %.2f'%rms_site['Total'].values)
         ax.text(0, 7, 'RMS Tzx  = %.2f'%rms_site['Tzx'].values)
         ax.text(0, 5, 'RMS Tzy  = %.2f'%rms_site['Tzy'].values)
-     
- 
+
         
     def plot_induction_arrows(self,
-                              frequencies,
-                              # real = True,
-                              # imag = False,
-                              inv_response = False,
-                              scale = 1,
-                              xlim = [-100, 100],
-                              ylim = [-100, 100], 
-                              save_plot = True):
+                                frequencies,
+                                real=True,
+                                imag=False,
+                                inv_response=False,
+                                scale=1,
+                                xlim=[-100, 100],
+                                ylim=[-100, 100],
+                                save_plot=True):
+        
+        from scipy.spatial.distance import pdist
+        from matplotlib.lines import Line2D
         
         if self.resp_VTF is None:
             print("No VTF data was inverted!")
-            return 
-        
-        from scipy.spatial.distance import pdist
-        dist_sites = min(pdist(np.array([self.mt_coords['east'],self.mt_coords['north']])).T)
-        # print(dist_sites)
-        scale = 0.5*dist_sites * scale
-        
+            return
+
+        # Compute scaling factor based on station spacing
+        dist_sites = min(pdist(np.array([self.mt_coords['east'], self.mt_coords['north']]).T))
+        scale = 0.5 * dist_sites * scale
+
+        # Match station coordinates to VTF responses
         self.mt_coords_VTF = pd.DataFrame(columns=self.mt_coords.columns)
         for rx in range(len(self.ids_VTF)):
-            ind = np.where(self.ids_VTF[rx] == self.mt_coords['id'].values)[0][0]
-            #self.mt_coords_VTF = self.mt_coords_VTF.append(self.mt_coords.loc[ind])
-            self.mt_coords_VTF  = pd.concat([self.mt_coords_VTF, pd.DataFrame([self.mt_coords.loc[ind]])], ignore_index=True)
+            matches = np.where(self.ids_VTF[rx] == self.mt_coords['id'].values)[0]
+            if len(matches) == 0:
+                print(f"Warning: Station ID {self.ids_VTF[rx]} not found in coordinates.")
+                continue
+            ind = matches[0]
+            self.mt_coords_VTF = pd.concat(
+                [self.mt_coords_VTF, pd.DataFrame([self.mt_coords.loc[ind]])],
+                ignore_index=True
+            )
 
-        fig, axs = plt.subplots(2, len(frequencies),sharex=False, sharey=False,figsize=(6*len(frequencies),10))
+        # Determine how many rows to use
+        num_rows = int(real) + int(imag)
+        row_labels = []
+        if real:
+            row_labels.append("Re")
+        if imag:
+            row_labels.append("Im")
 
-        for fr in range(len(frequencies)):
-    
-            ia = self.resp_VTF.iloc[np.where(self.resp_VTF['Freq[Hz]'] == frequencies[fr])[0]]
-            ia = ia.reset_index()
+        fig, axs = plt.subplots(num_rows, len(frequencies), figsize=(6 * len(frequencies), 5 * num_rows), sharex=False, sharey=False)
         
-            for i in range(len(ia)):
-                
-                axs[0,fr].scatter(self.mt_coords['east'],self.mt_coords['north'],c='k', marker='o', s=1)
-                axs[1,fr].scatter(self.mt_coords['east'],self.mt_coords['north'],c='k', marker='o', s=1)
-        
-                x = self.mt_coords_VTF.iloc[np.where(self.mt_coords_VTF['id'] == ia['StaID'][i])[0]]['east'].values[0]
-                y = self.mt_coords_VTF.iloc[np.where(self.mt_coords_VTF['id'] == ia['StaID'][i])[0]]['north'].values[0]
-                                
-                #axs[0].annotate("",xy=(x + ia['Re(Tzx)_Obs'][i] * scale , y + ia['Re(Tzy)_Obs'][i] * scale),
-                #                xytext=(x,y),
-                 #               arrowprops=dict(facecolor='black',shrink=0.001,lw=0.01))
-        
-                axs[0,fr].arrow(x,y,ia['Re(Tzy)_Obs'][i] * scale ,ia['Re(Tzx)_Obs'][i] * scale, width=0.1,
-                            ec='k', fc='k')
-                axs[0,fr].set_title('Re Induction arrows T = %.3f s'%(1/frequencies[fr]))
-        
-                if inv_response:
-                    axs[0,fr].arrow(x,y,ia['Re(Tzy)_Cal'][i] * scale ,ia['Re(Tzx)_Cal'][i] * scale, width=0.1, alpha=0.8,
-                            ec='r', fc='r')
-        
-                axs[1,fr].arrow(x,y,ia['Im(Tzy)_Obs'][i] * scale ,ia['Im(Tzx)_Obs'][i] * scale, width=0.1,
-                            ec='k', fc='k')
-                axs[1,fr].set_title('Imag Induction arrows T = %.3f s'%(1/frequencies[fr]))
-        
-                if inv_response:
-                    axs[1,fr].arrow(x,y,ia['Im(Tzy)_Cal'][i] * scale ,ia['Im(Tzx)_Cal'][i] * scale, width=0.1, alpha=0.8,
-                        ec='r', fc='r')
-                
-                axs[0,fr].set_xlim(xlim)
-                axs[0,fr].set_ylim(ylim)
-                axs[0,fr].grid(lw=0.1)
-                axs[0,fr].set_xlabel('East (km)')
-                axs[0,fr].set_ylabel('North (km)')
-                
-                axs[1,fr].set_xlim(xlim)
-                axs[1,fr].set_ylim(ylim)
-                axs[1,fr].grid(lw=0.1)
-                axs[1,fr].set_xlabel('East (km)')
-                axs[1,fr].set_ylabel('North (km)')
-                
+        if num_rows == 1:
+            axs = np.atleast_1d(axs)  # flatten if single row
+        else:
+            axs = np.array(axs)
+
+        for fr_idx, freq in enumerate(frequencies):
+            ia = self.resp_VTF[self.resp_VTF['Freq[Hz]'] == freq].reset_index()
+
+            for row_idx, label in enumerate(row_labels):
+                ax = axs[row_idx, fr_idx] if num_rows > 1 else axs[fr_idx]
+                ax.scatter(self.mt_coords['east'], self.mt_coords['north'], c='k', marker='o', s=1)
+
+                for i in range(len(ia)):
+                    station_id = ia['StaID'][i]
+                    match = self.mt_coords_VTF[self.mt_coords_VTF['id'] == station_id]
+                    if match.empty:
+                        continue
+
+                    x = match['east'].values[0]
+                    y = match['north'].values[0]
+
+                    if label == "Re":
+                        if real:
+                            # Observed
+                            ax.arrow(
+                                x, y,
+                                ia['Re(Tzy)_Obs'][i] * scale,
+                                ia['Re(Tzx)_Obs'][i] * scale,
+                                width=0.06,
+                                head_width=0.2,
+                                head_length=0.2,
+                                ec='k', fc='k'
+                            )
+                            # Inverted
+                            if inv_response:
+                                ax.arrow(
+                                    x, y,
+                                    ia['Re(Tzy)_Cal'][i] * scale,
+                                    ia['Re(Tzx)_Cal'][i] * scale,
+                                    width=0.06,
+                                    head_width=0.2,
+                                    head_length=0.2,
+                                    ec='r', fc='r', alpha=0.8
+                                )
+                            ax.set_title(f'Re Induction Arrows - f = {freq:.4f} Hz')
+
+                    elif label == "Im":
+                        if imag:
+                            # Observed
+                            ax.arrow(
+                                x, y,
+                                ia['Im(Tzy)_Obs'][i] * scale,
+                                ia['Im(Tzx)_Obs'][i] * scale,
+                                width=0.06,
+                                head_width=0.2,
+                                head_length=0.2,
+                                ec='k', fc='k'
+                            )
+                            # Inverted
+                            if inv_response:
+                                ax.arrow(
+                                    x, y,
+                                    ia['Im(Tzy)_Cal'][i] * scale,
+                                    ia['Im(Tzx)_Cal'][i] * scale,
+                                    width=0.06,
+                                    head_width=0.2,
+                                    head_length=0.2,
+                                    ec='r', fc='r', alpha=0.8
+                                )
+                            ax.set_title(f'Im Induction Arrows - f = {freq:.4f} Hz')
+
+                # Plot formatting
+                ax.set_xlim(xlim)
+                ax.set_ylim(ylim)
+                ax.set_aspect('equal')
+                ax.grid(lw=0.1)
+                ax.set_xlabel('East (km)')
+                ax.set_ylabel('North (km)')
+
+                # Legend
+                legend_elements = [
+                    Line2D([0], [0], color='k', lw=2, label='Observed'),
+                    Line2D([0], [0], color='r', lw=2, label='Modelled', alpha=0.8)
+                ]
+                ax.legend(handles=legend_elements, loc='upper left')
+
         if save_plot:
-            plt.savefig('%s/IA.png'%(self.plot_dir),dpi=300,bbox_inches='tight')
+            if not os.path.exists(self.plot_dir):
+                os.makedirs(self.plot_dir)
+            plt.savefig(f"{self.plot_dir}/IA2.png", dpi=300, bbox_inches='tight')
             plt.close('all')
         
-        
+
+
     def plot_VTF_fit(self,   xlim = [0,5],
                          ylim = [-6,1],
                          save_plot = True,
@@ -1696,14 +1797,14 @@ class InvResults():
                             sharex='all')
             axs[0].set_title('%s'%self.ids_VTF[site])
             
-            self.plot_tz(axs[0], f, data['Re(Tzx)_Obs'], c='r',label='Re',obs=True)
-            self.plot_tz(axs[0], f, data['Im(Tzx)_Obs'], c='b',label='Im',obs=True)
+            self.plot_tz(axs[0], f, data['Re(Tzx)_Obs'], dtz=data['Re(Tzx)_SD'], c='r',label='Re',obs=True)
+            self.plot_tz(axs[0], f, data['Im(Tzx)_Obs'], dtz=data['Im(Tzx)_SD'], c='b',label='Im',obs=True)
             self.plot_tz(axs[0], f, data['Re(Tzx)_Cal'], c='r',obs=False)
             self.plot_tz(axs[0], f, data['Im(Tzx)_Cal'], c='b',obs=False)
             format_fit(axs[0], xlim =xlim, ylim =ylim , xlabel = '', ylabel = 'Tzx')
    
-            self.plot_tz(axs[1], f, data['Re(Tzy)_Obs'], c='r',label='Re',obs=True)
-            self.plot_tz(axs[1], f, data['Im(Tzy)_Obs'], c='b',label='Im',obs=True)
+            self.plot_tz(axs[1], f, data['Re(Tzy)_Obs'], dtz=data['Re(Tzy)_SD'], c='r',label='Re',obs=True)
+            self.plot_tz(axs[1], f, data['Im(Tzy)_Obs'], dtz=data['Im(Tzy)_SD'], c='b',label='Im',obs=True)
             self.plot_tz(axs[1], f, data['Re(Tzy)_Cal'], c='r',obs=False)
             self.plot_tz(axs[1], f, data['Im(Tzy)_Cal'], c='b',obs=False)
             format_fit(axs[1], xlim =xlim, ylim =ylim , xlabel = '', ylabel = 'Tzy')
